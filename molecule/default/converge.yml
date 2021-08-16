@@ -2,6 +2,6 @@
 - name: Converge
   hosts: all
   tasks:
-    - name: "Include ansible-role-citus"
+    - name: "Include ansible-role-citus-cluster"
       include_role:
-        name: "ansible-role-citus"
+        name: "ansible-role-citus-cluster"
