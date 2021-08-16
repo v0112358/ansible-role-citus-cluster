@@ -2,7 +2,7 @@
 Ansible Role: Citus Cluster
 =========
 
-![CI](https://github.com/v0112358/ansible-role-citus-cluster/actions/workflows/main.yml/badge.svg) ![Ansible Role](https://img.shields.io/ansible/role/d/55902) [![GitHub license](https://img.shields.io/github/license/v0112358/ansible-role-citus-cluster)](https://github.com/v0112358/ansible-role-citus-cluster/blob/master/LICENSE.md)
+![CI](https://github.com/v0112358/ansible-role-citus-cluster/actions/workflows/main.yml/badge.svg) ![Ansible Role](https://img.shields.io/ansible/role/d/55983) [![GitHub license](https://img.shields.io/github/license/v0112358/ansible-role-citus-cluster)](https://github.com/v0112358/ansible-role-citus-cluster/blob/master/LICENSE.md)
 
 Install and configure Citus cluster on your system.
 
