@@ -1,0 +1,78 @@
+---
+- name: citus_cluster_postgres_exporter | Check if postgres_exporter already installed
+  ansible.builtin.stat: path=/usr/local/bin/postgres_exporter
+  register: postgres_exporter_bin
+
+- name: citus_cluster_postgres_exporter | Begin install postgres_exporter
+  block:
+    - name: citus_cluster_postgres_exporter | Prepare postgres_exporter path
+      ansible.builtin.file: path={{ item }} state=directory owner=nobody group=nobody mode=0755
+      with_items:
+        - /etc/postgres_exporter/
+
+    - name: citus_cluster_postgres_exporter | Download postgres_exporter release
+      ansible.builtin.get_url:
+        url: '{{ postgres_exporter_packages.url }}'
+        dest: /usr/local/src/
+        checksum: '{{ postgres_exporter_packages.checksum }}'
+      register: postgres_exporter_src
+
+    - name: citus_cluster_postgres_exporter | Extract postgres_exporter-*.tar.gz
+      ansible.builtin.unarchive:
+        src: '{{ postgres_exporter_src.dest }}'
+        remote_src: yes
+        dest: /usr/local/bin/
+        mode: 0755
+        owner: root
+        group: root
+        extra_opts: ['--strip', '1']
+
+    - name: citus_cluster_postgres_exporter | Remove junk files
+      ansible.builtin.file:
+        path: /usr/local/bin/{{ item }}
+        state: absent
+      with_items:
+        - LICENSE
+        - NOTICE
+        - README.md
+
+    - name: citus_cluster_postgres_exporter | Copy grant_postgres_exporter_permission.sql
+      ansible.builtin.template:
+        src: postgres_exporter/grant_postgres_exporter_permission.sql.j2
+        dest: "/var/lib/pgsql/grant_postgres_exporter_permission.sql"
+        owner: "postgres"
+        group: "postgres"
+        mode: 0644
+
+    - name: citus_cluster_postgres_exporter | Execute grant_postgres_exporter_permission.sql scripts
+      community.postgresql.postgresql_query:
+        path_to_script: "/var/lib/pgsql/grant_postgres_exporter_permission.sql"
+        db: "postgres"
+        login_user: "postgres"
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        login_unix_socket: "/var/run/postgresql"
+        as_single_query: yes
+      become: yes
+      become_user: "postgres"
+      #ignore_errors: yes
+      when: pg_role == "primary"
+    
+  when: postgres_exporter_bin.stat.exists == False
+
+- name: citus_cluster_postgres_exporter | Create postgres-exporter systemd service
+  ansible.builtin.template:
+    src: systemd/postgres-exporter.service.j2
+    dest: '/usr/lib/systemd/system/postgres-exporter.service'
+    owner: root
+    group: root
+    mode: 0644
+  notify: restart postgres-exporter
+
+- name: citus_cluster_postgres_exporter | Copy postgres_exporter_queries.yaml
+  template:
+    src: postgres_exporter/postgres_exporter_queries.yaml.j2
+    dest: "/etc/postgres_exporter/postgres_exporter_queries.yaml"
+    owner: nobody
+    group: nobody
+    mode: 0755
+  notify: restart postgres-exporter

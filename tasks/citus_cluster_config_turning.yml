@@ -1,0 +1,53 @@
+---
+- name: citus_cluster_config_turning | Check if pg-auto-failover is running
+  ansible.builtin.shell: pgrep -a "^pg_autoctl$"
+  ignore_errors: yes
+  changed_when: False
+  register: pgautofailover_proc_status
+
+- name: citus_cluster_config_turning | Apply config files /var/lib/pgsql/{{ pg_version }}/data/postgresql.conf for coordinator node
+  ansible.builtin.template:
+    src: postgresql_{{ pg_version }}.conf.j2
+    dest: /var/lib/pgsql/{{ pg_version }}/data/postgresql.conf
+    mode: 0600
+    owner: postgres
+    group: postgres
+  with_items:
+    - "{{ citus_postgres_coordinator_conf_params }}"
+  when: citus_role == "coordinator"
+
+- name: citus_cluster_config_turning | Apply config files /var/lib/pgsql/{{ pg_version }}/data/postgresql.conf for worker node
+  ansible.builtin.template:
+    src: postgresql_{{ pg_version }}.conf.j2
+    dest: /var/lib/pgsql/{{ pg_version }}/data/postgresql.conf
+    mode: 0600
+    owner: postgres
+    group: postgres
+  with_items:
+    - "{{ citus_postgres_worker_conf_params }}"
+  when: citus_role == "worker"
+
+- name: citus_cluster_config_turning | Apply config files /var/lib/pgsql/{{ pg_version }}/data/postgresql.conf for monitor node
+  ansible.builtin.template:
+    src: postgresql_{{ pg_version }}.conf.j2
+    dest: /var/lib/pgsql/{{ pg_version }}/data/postgresql.conf
+    mode: 0600
+    owner: postgres
+    group: postgres
+  with_items:
+    - "{{ citus_postgres_monitor_conf_params }}"
+  when: citus_role == "monitor"
+
+- name: citus_cluster_config_turning |  Ensure Postgresql service is started and enabled on boot
+  ansible.builtin.systemd:
+    name: postgresql-{{ pg_version }}
+    state: started
+    enabled: true
+  when: citus_role == "worker"
+
+- name: citus_cluster_config_turning |  Ensure Postgresql service is started
+  ansible.builtin.systemd:
+    name: postgresql-{{ pg_version }}
+    state: started
+    enabled: false
+  when: citus_role != "worker" and pgautofailover_proc_status.rc != 0

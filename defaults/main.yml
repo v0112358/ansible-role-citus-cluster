@@ -1,0 +1,120 @@
+---
+pg_version: 13
+citus_shard_replication_factor: 1
+
+citus_postgres_coordinator_conf_params:
+  listen_addresses: "*"
+
+citus_postgres_worker_conf_params:
+  listen_addresses: "*"
+
+citus_postgres_monitor_conf_params:
+  listen_addresses: "*"
+  shared_preload_libraries: "pgautofailover,pg_stat_statements"
+
+citus_postgres_slots: ""
+
+citus_postgres_pgpass_values:
+  - host: "*"
+    database: "*"
+    user: postgres
+    password: "TUGjhPkdhHdvR7CAcotOU"
+    state: present
+  - host: "*"
+    database: "*"
+    user: pgautofailover_replicator
+    password: "TUGjhPkdhHdvR7CAcotOU"
+    state: present
+  - host: "*"
+    database: "*"
+    user: autoctl_node
+    password: "TUGjhPkdhHdvR7CAcotOU"
+    state: present
+
+citus_postgres_pg_hba_ip_addresses:
+  - contype: "local"
+    users: "autoctl_node"
+    databases: "all"
+    method: "trust"
+    source: "127.0.0.1/32"
+    state: present
+  - contype: "local"
+    users: "all"
+    databases: "all"
+    method: "peer"
+    source: "127.0.0.1/32"
+    state: present
+  - contype: "host"
+    users: "all"
+    databases: "all"
+    method: "md5"
+    source: "127.0.0.1/32"
+    state: present
+  - contype: "host"
+    users: "all"
+    databases: "all"
+    method: "md5"
+    source: "0.0.0.0/0"
+    state: present
+
+citus_postgres_databases:
+  - name: citus_db
+    owner: postgres
+  - name: demo_db
+    owner: postgres
+
+citus_postgres_extensions:
+  - name: "pg_stat_statements"
+    database: postgres
+    state: present
+  - name: "citus"
+    database: "citus_db"
+    state: present
+  - name: "citus"
+    database: "demo_db"
+    state: present
+
+citus_postgres_system_users:
+  - name: postgres
+    db: postgres
+    password: "TUGjhPkdhHdvR7CAcotOU"
+  - name: pgautofailover_replicator
+    db: postgres
+    password: "TUGjhPkdhHdvR7CAcotOU"
+    role_attr_flags: SUPERUSER,REPLICATION
+  - name: autoctl_node
+    db: postgres
+    password: "TUGjhPkdhHdvR7CAcotOU"
+
+citus_postgres_application_users:
+  - name: demo
+    db: citus_db
+    password: "TUGjhPkdhHdvR7CAcotOU"
+
+citus_postgres_change_data_capture_users_users: ""
+
+supported_os:
+  - CentOS7
+  - RedHat7
+
+######## postgres_exporter
+postgres_exporter_username: "postgres_exporter"
+postgres_exporter_password: "umPPsampleF8gZvH"
+postgres_exporter_packages:
+  url: 'https://github.com/prometheus-community/postgres_exporter/releases/download/v0.10.0/postgres_exporter-0.10.0.linux-amd64.tar.gz'
+  checksum: 'sha256:1d1a008c5e29673b404a9ce119b7516fa59974aeda2f47d4a0446d102abce8a1'
+
+######### Systemd limit
+systemd_services:
+  postgresql-13:
+    LimitFSIZE: 'infinity'
+    LimitCPU: 'infinity'
+    LimitAS: 'infinity'
+    LimitNOFILE: 2000000
+    LimitNPROC: 2000000
+  pgautofailover:
+    LimitFSIZE: 'infinity'
+    LimitCPU: 'infinity'
+    LimitAS: 'infinity'
+    LimitNOFILE: 2000000
+    LimitNPROC: 2000000

@@ -1,0 +1,17 @@
+---
+- name: citus_cluster_yum_versionlock | Prevent Citus from being updated
+  community.general.yum_versionlock:
+    state: present
+    name:
+    - citus101_{{ pg_version }}
+    - postgresql{{ pg_version }}
+    - postgresql{{ pg_version }}-libs
+    - postgresql{{ pg_version }}-server
+    - postgresql{{ pg_version }}-contrib
+
+- name: citus_cluster_yum_versionlock | Prevent pg-auto-failover from being updated
+  community.general.yum_versionlock:
+    state: present
+    name:
+    - pg-auto-failover16_{{ pg_version }}
+  when: citus_role != "worker"

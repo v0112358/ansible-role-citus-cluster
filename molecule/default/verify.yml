@@ -1,0 +1,104 @@
+---
+
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:  
+  - block:
+    - name: Verify | Create test schema
+      community.postgresql.postgresql_query:
+        query: "CREATE SCHEMA github;"
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        db: "citus_db"
+        login_user: "postgres"
+        login_unix_socket: "/var/run/postgresql"
+      become: yes
+      become_user: "postgres"
+    
+    - name: Verify | Create table
+      community.postgresql.postgresql_query:
+        query: "CREATE TABLE github.events ( event_id bigint, event_type text, event_public boolean, repo_id bigint, payload jsonb, repo jsonb, actor jsonb, org jsonb, created_at timestamp ) PARTITION BY RANGE (created_at);"
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        db: "citus_db"
+        login_user: "postgres"
+        login_unix_socket: "/var/run/postgresql"
+      become: yes
+      become_user: "postgres"
+
+    - name: Verify | Distribute table github.events
+      community.postgresql.postgresql_query:
+        query: "SELECT create_distributed_table('github.events', 'repo_id');"
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        db: "citus_db"
+        login_user: "postgres"
+        login_unix_socket: "/var/run/postgresql"
+      become: yes
+      become_user: "postgres"
+
+    - name: Verify | Create partition in the table github.events
+      community.postgresql.postgresql_query:
+        query: "CREATE TABLE github.events_2015 PARTITION OF github.events FOR VALUES FROM ('2015-01-01') TO ('2015-12-31');"
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        db: "citus_db"
+        login_user: "postgres"
+        login_unix_socket: "/var/run/postgresql"
+      become: yes
+      become_user: "postgres"
+
+    - name: Verify | Install wget, gzip
+      ansible.builtin.package:
+        name:
+          - wget
+          - gzip
+        state: present
+
+    - name: Verify | Download sample data
+      ansible.builtin.shell: >
+        cd /var/lib/pgsql/ && wget http://examples.citusdata.com/github_archive/github_events-2015-01-01-1.csv.gz && gzip -d github_events-2015-01-01-*.gz
+      become: yes
+      become_user: "postgres"
+
+    - name: Verify | Import sample data into github.events
+      community.postgresql.postgresql_copy:
+        copy_from: /var/lib/pgsql/github_events-2015-01-01-1.csv
+        dst: github.events
+        db: "citus_db"
+        options:
+          format: csv
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        login_user: "postgres"
+        login_unix_socket: "/var/run/postgresql"
+      become: yes
+      become_user: "postgres"
+
+    - name: Verify | Count all records in github.events
+      community.postgresql.postgresql_query:
+        query: "SELECT count(1) FROM github.events;"
+        port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+        db: "citus_db"
+        login_user: "postgres"
+        login_unix_socket: "/var/run/postgresql"
+      become: yes
+      become_user: "postgres"
+      register: github_events_row_count
+      failed_when: github_events_row_count.query_result[0].count != 7427
+  
+    when:
+    - hostvars[inventory_hostname].pg_role == "primary" and hostvars[inventory_hostname].citus_role == "coordinator"
+
+  - block:
+    - name: Verify | Perform switchover coordinator node
+      ansible.builtin.shell: >
+        /usr/pgsql-13/bin/pg_autoctl perform switchover \
+          --pgdata "/var/lib/pgsql/13/data" \
+          --monitor 'postgres://autoctl_node@vm-dev-citus-monitor-0/pg_auto_failover?sslmode=prefer'
+      become: yes
+      become_user: "postgres"
+    when:
+    - hostvars[inventory_hostname].pg_role == "primary" and hostvars[inventory_hostname].citus_role == "monitor"
+
+  - name: Verify | Check postgres_exporter status
+    shell: >
+      curl localhost:9187/metrics
+    failed_when: '"pg_up 1" not in postgres_exporter_status.stdout'
+    register: postgres_exporter_status

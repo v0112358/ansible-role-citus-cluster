@@ -1,0 +1,64 @@
+---
+- name: citus_cluster_add_worker_node | List Citus worker on your cluster
+  ansible.builtin.debug:
+    msg: "{{ item }} - {{ hostvars[item].citus_role }}"
+  with_items: "{{ groups[hostvars[inventory_hostname].group_names[-1]] }}"
+  when:
+    - hostvars[item].citus_role == "worker"
+
+- name: citus_cluster_add_worker_node | Check database is in read/write mode
+  community.postgresql.postgresql_query:
+    query: "SELECT pg_catalog.pg_is_in_recovery()"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: db_status
+
+- name: citus_cluster_add_worker_node | Verify that the worker has been added to the coordinator node on database {{ database_item.name }}
+  community.postgresql.postgresql_query:
+    query: "SELECT * FROM citus_get_active_worker_nodes();"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "{{ database_item.name }}"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: citus_worker_status
+
+- block:
+  - name: citus_cluster_add_worker_node | Add Citus worker on database {{ database_item.name }}
+    community.postgresql.postgresql_query:
+      query: "SELECT * from citus_add_node('{{ worker_item }}', 5432);"
+      port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+      db: "{{ database_item.name }}"
+      login_user: "postgres"
+      login_unix_socket: "/var/run/postgresql"
+    become: yes
+    become_user: "postgres"
+    with_items: "{{ groups[hostvars[inventory_hostname].group_names[-1]] }}"
+    loop_control:
+      loop_var: worker_item
+    when:
+      - hostvars[worker_item].citus_role == "worker"
+
+  - name: citus_cluster_add_worker_node | Verify that the worker has been added to the coordinator node on database {{ database_item.name }}
+    community.postgresql.postgresql_query:
+      query: "SELECT * FROM citus_get_active_worker_nodes();"
+      port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+      db: "{{ database_item.name }}"
+      login_user: "postgres"
+      login_unix_socket: "/var/run/postgresql"
+    become: yes
+    become_user: "postgres"
+    register: citus_get_active_worker_nodes
+
+  - name: citus_cluster_add_worker_node | Debug output citus_cluster_add_worker_node on database {{ database_item.name }}
+    ansible.builtin.debug:
+      msg: "{{ citus_get_active_worker_nodes.query_result }}"
+
+  when:
+    - not db_status.query_result[0].pg_is_in_recovery
+    - citus_worker_status.rowcount == 0

@@ -1,0 +1,30 @@
+---
+- name: citus_cluster_manage_slots | Check database is in read/write mode
+  community.postgresql.postgresql_query:
+    query: "SELECT pg_catalog.pg_is_in_recovery()"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: db_status
+
+- name: citus_cluster_manage_slots | Manage slots
+  community.postgresql.postgresql_slot:
+    name: "{{ line_item.name }}"
+    slot_type: "{{ line_item.slot_type | default('physical') }}"
+    output_plugin: "{{ line_item.output_plugin | default(omit) }}"
+    state: "{{ line_item.state | default('present') }}"
+    db: "{{ line_item.database | default(pg_database) }}"
+    login_user: "postgres"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  with_items: "{{ citus_postgres_slots }}"
+  loop_control:
+    loop_var: line_item
+  when: 
+    - not db_status.query_result[0].pg_is_in_recovery
+    - citus_postgres_slots|length > 0

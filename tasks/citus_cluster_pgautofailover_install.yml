@@ -1,0 +1,41 @@
+---  
+- name: citus_cluster_pgautofailover_install | Check if pg-auto-failover already installed
+  ansible.builtin.stat: path=/usr/pgsql-{{ pg_version }}/bin/pg_autoctl
+  register: pg_autoctl_bin
+
+- block:
+  - name: citus_cluster_pgautofailover_install | Install pg-auto-failover
+    ansible.builtin.package:
+      name:
+        - pg-auto-failover16_{{ pg_version }}
+      state: present
+
+  - name: citus_cluster_pgautofailover_install | Create a directory for the systemd service modification
+    file:
+      path: '/usr/lib/systemd/system/pgautofailover.service.d'
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+  
+  - name: citus_cluster_pgautofailover_install | Create pg-auto-failover systemd service
+    template:
+      src: systemd/pgautofailover.service.j2
+      dest: '/etc/systemd/system/pgautofailover.service'
+      owner: root
+      group: root
+      mode: 0644
+
+  - name: citus_cluster_pgautofailover_install | Update pg-auto-failover systemd resource limit
+    template:
+      src: systemd/custom.conf.j2
+      dest: '/usr/lib/systemd/system/pgautofailover.service.d/custom.conf'
+      owner: root
+      group: root
+      mode: 0644
+    with_dict: '{{ systemd_services }}'
+    notify: systemd reload
+    tags:
+      - update_pgautofailover_systemd_resource_limit
+
+  when: pg_autoctl_bin.stat.exists == False

@@ -1,0 +1,123 @@
+---
+- name: citus_cluster_install | Check if Postgres is running
+  ansible.builtin.shell: pgrep -a "^postmaster$"
+  ignore_errors: yes
+  changed_when: False
+  register: postgres_proc_status
+  
+- name: citus_cluster_install | Check if Citus already installed
+  ansible.builtin.stat: path=/usr/pgsql-{{ pg_version }}/lib/citus.so
+  register: citus_bin
+
+- block:
+  - name: citus_cluster_install | Disable built-in Postgres module
+    ansible.builtin.shell: >
+      dnf -qy module disable postgresql
+    args:
+      executable: /bin/bash
+    register: disable_builtin_postgres
+    changed_when: disable_builtin_postgres.rc == 0
+    failed_when: disable_builtin_postgres.rc != 0
+    ignore_errors: yes
+    when: os in ['RedHat8','CentOS8']
+
+  - name: citus_cluster_install | Install yum-plugin-versionlock
+    ansible.builtin.package:
+      name: yum-plugin-versionlock
+      state: present
+
+  - name: citus_cluster_install | Install require python package
+    ansible.builtin.package:
+      name:
+        - python-pycurl
+        - libselinux-python
+        - python-psycopg2
+        - python-ipaddress
+      state: present
+    when: os in ['RedHat7','CentOS7']
+
+  - name: citus_cluster_install | Install require python package
+    ansible.builtin.package:
+      name:
+        - python3-pycurl
+        - python3-libselinux
+        - python3-psycopg2
+      state: present
+    become: yes
+    when: os in ['RedHat8','CentOS8']
+
+  - name: citus_cluster_install | Download Citus repository installer
+    ansible.builtin.get_url:
+      url: https://install.citusdata.com/community/rpm.sh
+      dest: /tmp/rpm.sh
+      mode: 0755
+      owner: root
+      group: root
+  
+  - name: citus_cluster_install | Add Citus repository for package manager
+    ansible.builtin.shell: >
+      sudo bash /tmp/rpm.sh
+    args:
+      creates: /etc/yum.repos.d/citusdata_community.repo
+
+  - name: citus_cluster_install | Remove the /tmp/rpm.sh
+    ansible.builtin.file: path=/tmp/rpm.sh state=absent
+    
+  - name: citus_cluster_install | Install PostgreSQL with Citus extension
+    ansible.builtin.package:
+      name:
+        - citus101_{{ pg_version }}
+        - postgresql{{ pg_version }}-contrib
+      state: present
+
+  - name: citus_cluster_install | Create a directory for the systemd service modification
+    file:
+      path: '/usr/lib/systemd/system/postgresql-{{ pg_version }}.service.d'
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+  
+  - name: citus_cluster_install | Update Postgres systemd resource limit
+    template:
+      src: systemd/custom.conf.j2
+      dest: '/usr/lib/systemd/system/postgresql-{{ pg_version }}.service.d/custom.conf'
+      owner: root
+      group: root
+      mode: 0644
+    with_dict: '{{ systemd_services }}'
+    notify: systemd reload
+    tags:
+      - update_postgres_systemd_resource_limit
+
+  - name: citus_cluster_install | Initialize system database
+    ansible.builtin.shell: >
+      sudo /usr/pgsql-{{ pg_version }}/bin/postgresql-{{ pg_version }}-setup initdb
+    args:
+      creates: /var/lib/pgsql/{{ pg_version }}/data/PG_VERSION
+
+  - name: citus_cluster_install | Copy default file pg_hba.conf
+    ansible.builtin.copy:
+      src: pg_hba.conf
+      dest: /var/lib/pgsql/{{ pg_version }}/data/pg_hba.conf
+      owner: postgres
+      group: postgres
+      mode: '0600'
+
+  - name: citus_cluster_install | Create empty file postgresql-auto-failover.conf
+    ansible.builtin.file:
+      path: /var/lib/pgsql/{{ pg_version }}/data/postgresql-auto-failover.conf
+      state: touch
+      owner: postgres
+      group: postgres
+      mode: 0600
+
+  - name: citus_cluster_install | Create empty file postgresql-auto-failover-standby.conf
+    ansible.builtin.file:
+      path: /var/lib/pgsql/{{ pg_version }}/data/postgresql-auto-failover-standby.conf
+      state: touch
+      owner: postgres
+      group: postgres
+      mode: 0600
+
+  when: citus_bin.stat.exists == False and postgres_proc_status.rc != 0

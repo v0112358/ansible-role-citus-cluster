@@ -1,0 +1,115 @@
+---
+- name: citus_cluster_pgautofailover_create_postgres | Check database is in read/write mode
+  community.postgresql.postgresql_query:
+    query: "SELECT pg_catalog.pg_is_in_recovery()"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: db_status
+
+- name: citus_cluster_pgautofailover_create_postgres | Check if pgautofailover_monitor user exists
+  community.postgresql.postgresql_query:
+    query: "SELECT usename FROM pg_user WHERE usename = 'pgautofailover_monitor'"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: pgautofailover_user_status
+
+- block:
+  - name: citus_cluster_pgautofailover_create_postgres |  Ensure Postgresql service is stopped and disabled on boot
+    ansible.builtin.systemd:
+      name: postgresql-{{ pg_version }}
+      state: stopped
+      enabled: false
+
+  - name: citus_cluster_pgautofailover_create_postgres | Create pg-auto-failover postgres on primary coordinator
+    ansible.builtin.shell: >
+      /usr/pgsql-{{ pg_version }}/bin/pg_autoctl create postgres \
+        --auth md5 \
+        --ssl-self-signed \
+        --ssl-mode prefer \
+        --pgdata "/var/lib/pgsql/{{ pg_version }}/data" \
+        --pgctl /usr/pgsql-{{ pg_version }}/bin/pg_ctl \
+        --monitor 'postgres://autoctl_node@{{ monitor_item }}/pg_auto_failover?sslmode=prefer'
+    become: yes
+    become_user: "postgres"
+    with_items: "{{ groups[hostvars[inventory_hostname].group_names[-1]] }}"
+    loop_control:
+      loop_var: monitor_item
+    when:
+      - hostvars[monitor_item].citus_role == "monitor"
+      - hostvars[inventory_hostname].pg_role == "primary"
+
+  - name: citus_cluster_pgautofailover_create_postgres |  Ensure pgautofailover service is stopped and disabled on boot on primary coordinator
+    ansible.builtin.systemd:
+      name: pgautofailover
+      state: started
+      enabled: true
+    when:
+      - hostvars[inventory_hostname].pg_role == "primary"
+  
+  - name: citus_cluster_pgautofailover_create_postgres | Sleep 10 seconds 
+    ansible.builtin.pause:
+      seconds: 10
+
+  - name: citus_cluster_pgautofailover_create_postgres | Remove /var/lib/pgsql/{{ pg_version }}/data on standby coordinator
+    ansible.builtin.file:
+      path: /var/lib/pgsql/{{ pg_version }}/data
+      state: absent
+    when: hostvars[inventory_hostname].pg_role == "standby"
+
+  - name: citus_cluster_pgautofailover_create_postgres | Create pg-auto-failover postgres on standby coordinator
+    ansible.builtin.shell: >
+      /usr/pgsql-{{ pg_version }}/bin/pg_autoctl create postgres \
+        --auth md5 \
+        --ssl-self-signed \
+        --ssl-mode prefer \
+        --pgdata "/var/lib/pgsql/{{ pg_version }}/data" \
+        --pgctl /usr/pgsql-{{ pg_version }}/bin/pg_ctl \
+        --monitor 'postgres://autoctl_node@{{ monitor_item }}/pg_auto_failover?sslmode=prefer'
+    become: yes
+    become_user: "postgres"
+    with_items: "{{ groups[hostvars[inventory_hostname].group_names[-1]] }}"
+    loop_control:
+      loop_var: monitor_item
+    when:
+      - hostvars[monitor_item].citus_role == "monitor"
+      - hostvars[inventory_hostname].pg_role == "standby"
+
+  - name: citus_cluster_pgautofailover_create_postgres |  Ensure pgautofailover service is stopped and disabled on boot on standby coordinator
+    ansible.builtin.systemd:
+      name: pgautofailover
+      state: started
+      enabled: true
+    when:
+      - hostvars[inventory_hostname].pg_role == "standby"
+
+  - name: citus_cluster_pgautofailover_create_postgres | Verify that the monitor knows about our nodes
+    ansible.builtin.shell: >
+      /usr/pgsql-{{ pg_version }}/bin/pg_autoctl show state \
+        --monitor 'postgres://autoctl_node@{{ monitor_item }}/pg_auto_failover?sslmode=prefer'
+    become: yes
+    become_user: "postgres"
+    register: pgautofailover_node_status
+    with_items: "{{ groups[hostvars[inventory_hostname].group_names[-1]] }}"
+    loop_control:
+      loop_var: monitor_item
+    when:
+      - hostvars[monitor_item].citus_role == "monitor"
+      - hostvars[inventory_hostname].pg_role == "standby"
+  
+  - name: citus_cluster_pgautofailover_create_postgres | Debug output pgautofailover_node_status
+    ansible.builtin.debug:
+      msg: "{{ pgautofailover_node_status }}"
+    when:
+      - hostvars[inventory_hostname].pg_role == "standby"
+
+  when:
+    - pgautofailover_user_status.rowcount == 0
+    - not db_status.query_result[0].pg_is_in_recovery

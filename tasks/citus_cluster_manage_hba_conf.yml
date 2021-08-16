@@ -1,0 +1,26 @@
+---
+- name: citus_cluster_manage_hba_conf | Manage ip address entries into pg_hba file
+  community.postgresql.postgresql_pg_hba:
+    dest: /var/lib/pgsql/{{ pg_version }}/data/pg_hba.conf
+    contype: "{{ line_item.contype | default('hostssl') }}"
+    users: "{{ line_item.users | default ('all') }}"
+    source: "{{ line_item.source }}"
+    databases: "{{ line_item.databases | default('all') }}"
+    method: "{{ line_item.method | default('md5') }}"
+    state: "{{ line_item.state | default('present') }}"
+    create: true
+    backup: yes
+    owner: postgres
+    mode: 0600
+  when: citus_postgres_pg_hba_ip_addresses|length > 0
+  with_items: "{{ citus_postgres_pg_hba_ip_addresses }}"
+  loop_control:
+      loop_var: line_item
+  register: hba_update
+
+# - name: citus_cluster_manage_hba_conf | Reload the pg service
+#   systemd:
+#     name: "{{ pg_service }}"
+#     daemon_reload: yes
+#     state: reloaded
+#   when: hba_update.changed

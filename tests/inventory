@@ -1,0 +1,13 @@
+[citus_cluster:children]
+citus_cluster_infra
+
+[citus_cluster_infra]
+vm-dev-citus-coordinator-0  citus_role="coordinator" pg_role="primary"
+vm-dev-citus-coordinator-1  citus_role="coordinator" pg_role="standby"
+vm-dev-citus-monitor-0      citus_role="monitor"  pg_role="primary"
+vm-dev-citus-worker-0       citus_role="worker" pg_role="primary"
+vm-dev-citus-worker-1       citus_role="worker" pg_role="primary"
+vm-dev-citus-worker-2       citus_role="worker" pg_role="primary"
+vm-dev-citus-worker-3       citus_role="worker" pg_role="primary"
+vm-dev-citus-worker-4       citus_role="worker" pg_role="primary"
+vm-dev-citus-worker-5       citus_role="worker" pg_role="primary"

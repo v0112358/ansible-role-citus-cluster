@@ -1,0 +1,15 @@
+---
+- name: citus_cluster_manage_pgpass | Manage entries in .pgpass
+  lineinfile:
+    path: /var/lib/pgsql/.pgpass
+    line: "{{ line_item.host|default('*') }}:{{ citus_postgres_coordinator_conf_params.port | default('5432') }}:{{ line_item.database|default('*') }}:{{ line_item.user }}:{{ line_item.password }}"
+    state: "{{ line_item.state | default('present') }}"
+    create: "{{ line_item.create | default('yes') }}"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  no_log: True
+  when: citus_postgres_pgpass_values|length > 0
+  with_items: "{{ citus_postgres_pgpass_values }}"
+  loop_control:
+    loop_var: line_item

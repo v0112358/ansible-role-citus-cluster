@@ -1,0 +1,50 @@
+---
+- name: citus_cluster_pgautofailover_create_monitor | Check database is in read/write mode
+  community.postgresql.postgresql_query:
+    query: "SELECT pg_catalog.pg_is_in_recovery()"
+    port: "{{ citus_postgres_monitor_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: db_status
+
+- name: citus_cluster_pgautofailover_create_monitor | Check if pgautofailover database exists
+  community.postgresql.postgresql_query:
+    query: "SELECT datname FROM pg_database WHERE datname = 'pg_auto_failover'"
+    port: "{{ citus_postgres_monitor_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: pgautofailover_db_status
+
+- block:
+  - name: citus_cluster_pgautofailover_create_monitor |  Ensure Postgresql service is stopped and disabled on boot
+    ansible.builtin.systemd:
+      name: postgresql-{{ pg_version }}
+      state: stopped
+      enabled: false
+
+  - name: citus_cluster_pgautofailover_create_monitor | Create pg-auto-failover monitor
+    ansible.builtin.shell: >
+      /usr/pgsql-{{ pg_version }}/bin/pg_autoctl create monitor \
+        --auth md5 \
+        --ssl-self-signed \
+        --ssl-mode prefer \
+        --pgdata "/var/lib/pgsql/{{ pg_version }}/data" \
+        --pgctl /usr/pgsql-{{ pg_version }}/bin/pg_ctl
+    become: yes
+    become_user: "postgres"
+
+  - name: citus_cluster_pgautofailover_create_monitor |  Ensure pgautofailover service is stopped and disabled on boot
+    ansible.builtin.systemd:
+      name: pgautofailover
+      state: started
+      enabled: true
+
+  when:
+    - pgautofailover_db_status.rowcount == 0
+    - not db_status.query_result[0].pg_is_in_recovery

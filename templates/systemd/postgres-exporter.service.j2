@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# /etc/systemd/system/postgres_exporter.service
+[Unit]
+Description=Postgres Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=nobody
+Group=nobody
+Type=simple
+Environment='DATA_SOURCE_NAME=postgresql://{{ postgres_exporter_username }}:{{ postgres_exporter_password }}@127.0.0.1:{{ citus_postgres_coordinator_conf_params.port | default('5432') }}/postgres?sslmode=disable'
+ExecStart=/usr/local/bin/postgres_exporter --web.listen-address=0.0.0.0:{{ postgres_exporter_port | default('9187') }} --auto-discover-databases --extend.query-path="/etc/postgres_exporter/postgres_exporter_queries.yaml"
+
+[Install]
+WantedBy=multi-user.target

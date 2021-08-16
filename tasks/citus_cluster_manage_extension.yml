@@ -1,0 +1,29 @@
+---
+- name: citus_cluster_managed_extension | Check database is in read/write mode
+  community.postgresql.postgresql_query:
+    query: "SELECT pg_catalog.pg_is_in_recovery()"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "postgres"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  register: db_status
+
+- name: citus_cluster_managed_extension | Manage postgres extensions
+  community.postgresql.postgresql_ext:
+    name: "{{ line_item.name }}"
+    port: "{{ citus_postgres_coordinator_conf_params.port | default('5432') }}"
+    db: "{{ line_item.database }}"
+    cascade: yes
+    state: "{{ line_item.state | default('present') }}"
+    login_user: "postgres"
+    login_unix_socket: "/var/run/postgresql"
+  become: yes
+  become_user: "postgres"
+  with_items: "{{ citus_postgres_extensions }}"
+  loop_control:
+    loop_var: line_item
+  when:
+    - not db_status.query_result[0].pg_is_in_recovery
+    - citus_postgres_extensions|length > 0

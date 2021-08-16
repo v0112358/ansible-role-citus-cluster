@@ -1,0 +1,65 @@
+---
+- name: Set the os variable
+  set_fact:
+    os: "{{ ansible_distribution }}{{ ansible_distribution_major_version }}"
+
+- name: Check support for Operating System
+  fail:
+    msg: "Operating System = {{ os }} not supported."
+  when: os not in supported_os
+
+- include_tasks: citus_cluster_update_etc_hosts.yml
+  tags: [citus_cluster_update_etc_hosts, update_etc_hosts]
+
+- include_tasks: citus_cluster_postgres_install.yml
+  tags: [citus_cluster_install, postgres_install]
+
+- include_tasks: citus_cluster_pgautofailover_install.yml
+  tags: [citus_cluster_pgautofailover_install, pgautofailover_install]
+  when: citus_role is defined and citus_role != "worker"
+
+- include_tasks: citus_cluster_yum_versionlock.yml
+  tags: [citus_cluster_yum_versionlock, yum_versionlock]
+
+- include_tasks: citus_cluster_config_turning.yml
+  tags: [citus_cluster_config_turning, config_turning]
+
+- include_tasks: citus_cluster_manage_hba_conf.yml
+  tags: [citus_cluster_manage_hba_conf, manage_hba_conf]
+
+- include_tasks: citus_cluster_manage_db.yml
+  tags: [citus_cluster_manage_db, manage_db]
+  when: citus_role is defined and pg_role is defined and citus_role != "monitor" and pg_role == "primary"
+
+- include_tasks: citus_cluster_manage_users.yml
+  tags: [citus_cluster_manage_users, manage_users]
+  when: pg_role is defined and pg_role == "primary"
+
+- include_tasks: citus_cluster_manage_pgpass.yml
+  tags: [citus_cluster_manage_pgpass, manage_pgpass]
+
+- include_tasks: citus_cluster_manage_extension.yml
+  tags: [citus_cluster_manage_extension, manage_extension]
+  when: citus_role is defined and pg_role is defined and citus_role != "monitor" and pg_role == "primary"
+
+- include_tasks: citus_cluster_manage_slots.yml
+  tags: [citus_cluster_manage_slots, manage_slots]
+  when: citus_role is defined and pg_role is defined and citus_role == "coordinator" and pg_role == "primary"
+
+- include_tasks: citus_cluster_pgautofailover_create_monitor.yml
+  tags: [citus_cluster_pgautofailover_create_monitor, pgautofailover_create_monitor]
+  when: citus_role is defined and citus_role == "monitor"
+
+- include_tasks: citus_cluster_pgautofailover_create_postgres.yml
+  tags: [citus_cluster_pgautofailover_create_postgres, pgautofailover_create_postgres]
+  when: citus_role is defined and citus_role == "coordinator"
+
+- include_tasks: citus_cluster_add_worker_node.yml
+  loop: "{{ citus_postgres_databases }}"
+  loop_control:
+      loop_var: database_item
+  tags: [citus_cluster_add_worker_node, add_worker_node]
+  when: citus_role == "coordinator" and pg_role == "primary"
+
+- include_tasks: citus_cluster_postgres_exporter.yml
+  tags: [citus_cluster_postgres_exporter, postgres_exporter]

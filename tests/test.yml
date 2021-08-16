@@ -1,0 +1,11 @@
+---
+- name: Deploy Citus cluster
+  hosts: citus_cluster
+  pre_tasks:
+    - name: Verify Ansible meets Citus requirements.
+      assert:
+        that: "ansible_version.full is version_compare('2.10.0', '>=')"
+        msg: >
+          "You must update Ansible to at least 2.10.0 to use this playbook"
+  roles:
+    - { role: citus_cluster, tags: citus_cluster }
